@@ -25,13 +25,38 @@ pool.on('error', (err) => {
   console.warn('[PostgreSQL Pool] Connection warning (auto-recovering):', err.message);
 });
 
+// Safe JSON parser helper for PostgreSQL JSON/JSONB and String columns
+function safeJsonArray(val, fallback = []) {
+  if (!val) return fallback;
+  if (Array.isArray(val)) return val;
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val);
+      return Array.isArray(parsed) ? parsed : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  return fallback;
+}
+
 // Hack-Proof Security Headers & Anti-DDoS Rate Limiting
 app.use(SecurityShield.rateLimitMiddleware);
 app.use(cors());
 app.use(express.json());
 
-// Sync 1-Billion BitArray from PostgreSQL on server startup
-globalBloomFilter.syncFromDb(pool);
+// Serverless / Vercel route prefix normalizer
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/assets')) {
+    req.url = '/api' + req.url;
+  }
+  next();
+});
+
+// Sync BitArray from PostgreSQL on server startup if DB is connected
+if (DATABASE_URL) {
+  globalBloomFilter.syncFromDb(pool).catch(() => {});
+}
 
 // 1. Health check & DB connection test
 app.get('/api/health', async (req, res) => {
@@ -268,11 +293,11 @@ app.post('/api/auth/signin', async (req, res) => {
         streak: Number(row.streak) || 1,
         lastDailyDate: row.last_daily_date,
         currentWorldId: 1,
-        unlockedChapters: row.unlocked_chapters || [1],
-        completedLessons: row.completed_lessons || [],
-        completedCaseStudies: row.completed_case_studies || [],
+        unlockedChapters: safeJsonArray(row.unlocked_chapters, [1]),
+        completedLessons: safeJsonArray(row.completed_lessons, []),
+        completedCaseStudies: safeJsonArray(row.completed_case_studies, []),
         completedDailyTasks: [],
-        solvedQueriesCount: Number(row.solved_queries_count) || 0,
+        solvedQueriesCount: Number(row.solved_queries_count || row.solved_queries) || 0,
         createdAt: row.created_at || new Date().toISOString(),
       },
     });
@@ -318,11 +343,11 @@ app.get('/api/user/:userId', async (req, res) => {
         streak: Number(row.streak) || 1,
         lastDailyDate: row.last_daily_date,
         currentWorldId: 1,
-        unlockedChapters: row.unlocked_chapters || [1],
-        completedLessons: row.completed_lessons || [],
-        completedCaseStudies: row.completed_case_studies || [],
+        unlockedChapters: safeJsonArray(row.unlocked_chapters, [1]),
+        completedLessons: safeJsonArray(row.completed_lessons, []),
+        completedCaseStudies: safeJsonArray(row.completed_case_studies, []),
         completedDailyTasks: [],
-        solvedQueriesCount: Number(row.solved_queries_count) || 0,
+        solvedQueriesCount: Number(row.solved_queries_count || row.solved_queries) || 0,
         createdAt: row.created_at || new Date().toISOString(),
       },
     });
@@ -452,7 +477,7 @@ app.get('/api/leaderboard', async (req, res) => {
       gems: Number(row.gems) || 0,
       streak: Number(row.streak) || 1,
       solvedQueriesCount: Number(row.solvedQueriesCount) || 0,
-      completedQuestsCount: Array.isArray(row.completedLessons) ? row.completedLessons.length : 0,
+      completedQuestsCount: safeJsonArray(row.completedLessons, []).length,
     }));
     res.json({ success: true, leaderboard });
   } catch (err) {
@@ -508,10 +533,10 @@ app.get('/api/progress/:userId', async (req, res) => {
       xp: r.xp,
       gems: r.gems,
       streak: r.streak,
-      unlockedChapters: r.unlocked_chapters,
-      completedLessons: r.completed_lessons,
-      completedCaseStudies: r.completed_case_studies,
-      solvedQueriesCount: r.solved_queries_count,
+      unlockedChapters: safeJsonArray(r.unlocked_chapters, [1]),
+      completedLessons: safeJsonArray(r.completed_lessons, []),
+      completedCaseStudies: safeJsonArray(r.completed_case_studies, []),
+      solvedQueriesCount: Number(r.solved_queries_count || r.solved_queries) || 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -654,9 +679,9 @@ async function recordUserLessonPassed(userId, lessonId, chapterId) {
     if (cur.rows.length === 0) return null;
 
     const row = cur.rows[0];
-    const completedLessons = row.completed_lessons || [];
-    const completedCaseStudies = row.completed_case_studies || [];
-    const unlockedChapters = row.unlocked_chapters || [1];
+    const completedLessons = safeJsonArray(row.completed_lessons, []);
+    const completedCaseStudies = safeJsonArray(row.completed_case_studies, []);
+    const unlockedChapters = safeJsonArray(row.unlocked_chapters, [1]);
 
     if (!completedLessons.includes(lessonId)) {
       completedLessons.push(lessonId);
@@ -756,7 +781,7 @@ app.get('/api/schema', async (req, res) => {
   }
 });
 
-if (process.env.VITE_EMBEDDED !== 'true') {
+if (process.env.VITE_EMBEDDED !== 'true' && !process.env.VERCEL) {
   const server = app.listen(PORT, () => {
     console.log(`⚔️ SQL Codex Backend running on http://localhost:${PORT}`);
   });

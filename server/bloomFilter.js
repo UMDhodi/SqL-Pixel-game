@@ -7,10 +7,11 @@
  */
 
 export class BillionBitBloomFilter {
-  constructor(sizeInBits = 1_000_000_000) {
+  constructor(sizeInBits = (process.env.VERCEL ? 10_000_000 : 1_000_000_000)) {
     this.sizeInBits = sizeInBits;
     this.byteSize = Math.ceil(sizeInBits / 8);
-    console.log(`[BloomFilter] Allocating 1-Billion BitArray (${this.byteSize} bytes = 125 MB)...`);
+    const mbSize = (this.byteSize / (1024 * 1024)).toFixed(1);
+    console.log(`[BloomFilter] Allocating BitArray (${this.byteSize} bytes = ${mbSize} MB)...`);
     const startAlloc = performance.now();
     this.bitArray = Buffer.alloc(this.byteSize); // Initialized with all 0s
     const allocTime = (performance.now() - startAlloc).toFixed(2);

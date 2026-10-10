@@ -127,7 +127,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
       });
 
       if (res.success && res.user) {
-        StorageService.setActiveUserId(res.user.id);
+        StorageService.setActiveUserId(res.user.id || res.user.userId);
+        StorageService.saveActiveProfile(res.user);
+        await new Promise(r => setTimeout(r, 450));
         onLoginSuccess(res.user);
       } else {
         setErrorMsg(res.error || 'Failed to create account.');
@@ -158,7 +160,9 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     try {
       const res = await ApiService.signIn(signInIdentifier.trim(), password.trim());
       if (res.success && res.user) {
-        StorageService.setActiveUserId(res.user.id);
+        StorageService.setActiveUserId(res.user.id || res.user.userId);
+        StorageService.saveActiveProfile(res.user);
+        await new Promise(r => setTimeout(r, 450));
         onLoginSuccess(res.user);
       } else {
         setErrorMsg(res.error || 'Failed to sign in. Check credentials.');
@@ -187,6 +191,43 @@ export const AuthPage: React.FC<AuthPageProps> = ({ onLoginSuccess }) => {
     <div className="min-h-screen bg-dungeon-abyss text-parchment-white flex flex-col items-center justify-center p-4 relative font-code">
       {/* Background scanlines */}
       <div className="absolute inset-0 crt-overlay opacity-40 pointer-events-none" />
+
+      {/* Full Loading Screen Overlay after click Sign In / Sign Up */}
+      {isLoading && (
+        <div className="fixed inset-0 z-50 bg-dungeon-abyss/85 backdrop-blur-md flex flex-col items-center justify-center p-4">
+          <div className="w-full max-w-sm bg-dungeon-chamber border-2 border-mana-core p-6 text-center shadow-[0_0_50px_rgba(0,242,254,0.35)] relative overflow-hidden">
+            {/* Retro CRT overlay */}
+            <div className="absolute inset-0 crt-overlay opacity-50 pointer-events-none" />
+
+            {/* Glowing Mana Core animation */}
+            <div className="relative w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+              <div className="absolute inset-0 border-2 border-mana-core/30 rounded-full animate-ping" />
+              <div className="absolute inset-0 border-2 border-mana-core border-t-transparent rounded-full animate-spin" />
+              <div className="w-10 h-10 bg-dungeon-abyss border border-mana-core flex items-center justify-center text-mana-core shadow-[0_0_15px_rgba(0,242,254,0.5)]">
+                <Swords className="w-5 h-5 animate-pulse" />
+              </div>
+            </div>
+
+            <h3 className="font-display font-bold text-sm uppercase text-mana-glow tracking-widest mb-1.5">
+              {isSignUp ? 'CREATING ADVENTURER RECORD' : 'AUTHENTICATING RUNIC CIPHER'}
+            </h3>
+
+            <p className="text-[11px] text-parchment-rune font-code mb-4">
+              Accessing PostgreSQL database vault & syncing character progression...
+            </p>
+
+            {/* Retro pixel loading bar */}
+            <div className="w-full h-2.5 bg-dungeon-abyss border border-dungeon-border overflow-hidden relative">
+              <div className="h-full bg-gradient-to-r from-mana-core via-quest-gold to-mana-glow animate-[pulse_1s_ease-in-out_infinite] w-full" />
+            </div>
+
+            <div className="mt-3 flex items-center justify-center gap-2 text-[10px] font-display text-quest-gold">
+              <span className="w-1.5 h-1.5 rounded-full bg-quest-gold animate-ping" />
+              <span>FETCHING STATS & CHAPTER MASTERY...</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Auth Card */}
       <div className="w-full max-w-md bg-dungeon-chamber border-2 border-mana-core shadow-pixel-modal relative z-10 overflow-hidden">

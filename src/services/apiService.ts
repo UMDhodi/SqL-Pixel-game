@@ -109,6 +109,10 @@ export class ApiService {
         if (!res.ok) {
           return { success: false, error: json.error || 'Failed to sign up', alreadyExists: json.alreadyExists || false };
         }
+        if (json.user) {
+          StorageService.saveActiveProfile(json.user);
+          StorageService.setActiveUserId(json.user.id || json.user.userId);
+        }
         return { success: true, user: json.user };
       }
     } catch {
@@ -134,6 +138,7 @@ export class ApiService {
       createdAt: new Date().toISOString(),
     });
     StorageService.saveActiveProfile(localProfile);
+    StorageService.setActiveUserId(localProfile.id);
 
     return { success: true, user: localProfile };
   }
@@ -153,6 +158,10 @@ export class ApiService {
       if (json) {
         if (!res.ok) {
           return { success: false, error: json.error || 'Failed to sign in' };
+        }
+        if (json.user) {
+          StorageService.saveActiveProfile(json.user);
+          StorageService.setActiveUserId(json.user.id || json.user.userId);
         }
         return { success: true, user: json.user };
       }
@@ -244,7 +253,10 @@ export class ApiService {
       const res = await fetch(`${API_BASE}/user/${userId}`);
       if (res.ok) {
         const json = await parseSafeJson(res);
-        if (json && json.user) return json.user;
+        if (json && json.user) {
+          StorageService.saveActiveProfile(json.user);
+          return json.user;
+        }
       }
     } catch {}
 
@@ -352,45 +364,20 @@ export class ApiService {
     } catch {}
 
     const localProfile = StorageService.getActiveProfile();
+    if (!localProfile) return [];
     return [
       {
         rank: 1,
-        id: localProfile?.id || 'player-1',
-        username: localProfile?.gamerTag || 'Mayank_D',
-        gamerTag: localProfile?.gamerTag || 'Mayank_D',
-        role: localProfile?.role || 'Data Analyst',
-        level: localProfile?.level || 1,
-        xp: localProfile?.xp || 0,
-        gems: localProfile?.gems || 0,
-        streak: localProfile?.streak || 1,
-        solvedQueriesCount: localProfile?.solvedQueriesCount || 0,
-        completedQuestsCount: (localProfile?.completedLessons || []).length,
-      },
-      {
-        rank: 2,
-        id: 'bot-2',
-        username: 'Vanguard_Elena',
-        gamerTag: 'Elena_DBA',
-        role: 'Database Administrator',
-        level: 4,
-        xp: 1420,
-        gems: 85,
-        streak: 5,
-        solvedQueriesCount: 18,
-        completedQuestsCount: 12,
-      },
-      {
-        rank: 3,
-        id: 'bot-3',
-        username: 'Cyber_Thorne',
-        gamerTag: 'Thorne_AI',
-        role: 'Data Scientist',
-        level: 3,
-        xp: 980,
-        gems: 50,
-        streak: 3,
-        solvedQueriesCount: 11,
-        completedQuestsCount: 8,
+        id: localProfile.id || 'player-1',
+        username: localProfile.gamerTag || 'Adventurer',
+        gamerTag: localProfile.gamerTag || 'Adventurer',
+        role: localProfile.role || 'Data Analyst',
+        level: Number(localProfile.level) || 1,
+        xp: Number(localProfile.xp) || 0,
+        gems: Number(localProfile.gems) || 0,
+        streak: Number(localProfile.streak) || 1,
+        solvedQueriesCount: Number(localProfile.solvedQueriesCount) || 0,
+        completedQuestsCount: (localProfile.completedLessons || []).length,
       },
     ];
   }
