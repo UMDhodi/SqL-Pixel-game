@@ -7,7 +7,7 @@
  */
 
 export class BillionBitBloomFilter {
-  constructor(sizeInBits = (process.env.VERCEL ? 10_000_000 : 1_000_000_000)) {
+  constructor(sizeInBits = 10_000_000) {
     this.sizeInBits = sizeInBits;
     this.byteSize = Math.ceil(sizeInBits / 8);
     const mbSize = (this.byteSize / (1024 * 1024)).toFixed(1);

@@ -40,24 +40,25 @@ export const App: React.FC = () => {
 
     // Check if active user session exists in cloud DB or browser storage
     const activeUserId = StorageService.getActiveUserId();
-    if (activeUserId) {
-      ApiService.getUserProfile(activeUserId).then(user => {
+    const localProfile = StorageService.getActiveProfile();
+    const lookupKey = activeUserId || localProfile?.id || localProfile?.gamerTag || localProfile?.username;
+
+    if (lookupKey) {
+      ApiService.getUserProfile(lookupKey).then(user => {
         if (user) {
           setProfile(user);
+          StorageService.saveActiveProfile(user);
+          StorageService.setActiveUserId(user.id || user.userId);
+          setCurrentView('home');
+        } else if (localProfile) {
+          setProfile(localProfile);
           setCurrentView('home');
         } else {
-          const localProfile = StorageService.getActiveProfile();
-          if (localProfile) {
-            setProfile(localProfile);
-            setCurrentView('home');
-          } else {
-            StorageService.clearSession();
-            setCurrentView('auth');
-          }
+          StorageService.clearSession();
+          setCurrentView('auth');
         }
         setIsLoadingUser(false);
       }).catch(() => {
-        const localProfile = StorageService.getActiveProfile();
         if (localProfile) {
           setProfile(localProfile);
           setCurrentView('home');
@@ -151,6 +152,7 @@ export const App: React.FC = () => {
           onChangeView={(v) => setCurrentView(v)}
           onOpenProfile={() => setIsProfileModalOpen(true)}
           onStartQuest={handleStartQuest}
+          onProfileUpdated={handleProfileUpdated}
         />
       )}
 

@@ -13,11 +13,12 @@ const { Pool } = pg;
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-const DATABASE_URL = process.env.DATABASE_URL || '';
+const DEFAULT_PG_URL = 'postgres://e20f60ebcd9f5b41641eeeb4897f133cb6264e75198e9ee7008bf42239685872:sk_H7f_LWqDRNLhGyln_s-44@pooled.db.prisma.io:5432/postgres?sslmode=require';
+const DATABASE_URL = process.env.DATABASE_URL || DEFAULT_PG_URL;
 
 const pool = new Pool({
-  connectionString: DATABASE_URL || undefined,
-  ssl: DATABASE_URL ? { rejectUnauthorized: false } : undefined,
+  connectionString: DATABASE_URL,
+  ssl: { rejectUnauthorized: false },
 });
 
 // Auto-reconnection and error safety
@@ -47,7 +48,9 @@ app.use(express.json());
 
 // Serverless / Vercel route prefix normalizer
 app.use((req, res, next) => {
-  if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/assets')) {
+  if (req.url.startsWith('/api/api/')) {
+    req.url = req.url.replace('/api/api/', '/api/');
+  } else if (!req.url.startsWith('/api') && req.url !== '/' && !req.url.startsWith('/assets')) {
     req.url = '/api' + req.url;
   }
   next();
@@ -314,7 +317,10 @@ app.get('/api/user/:userId', async (req, res) => {
       `SELECT u.*, p.level, p.xp, p.gems, p.streak, p.last_daily_date, p.unlocked_chapters, p.completed_lessons, p.completed_case_studies, p.solved_queries_count
        FROM users u
        LEFT JOIN user_progress p ON u.id = p.user_id
-       WHERE u.id = $1`,
+       WHERE u.id = $1
+          OR LOWER(u.username) = LOWER($1)
+          OR LOWER(COALESCE(u.gamer_tag, '')) = LOWER($1)
+          OR (u.email != '' AND LOWER(u.email) = LOWER($1))`,
       [req.params.userId]
     );
 
@@ -347,6 +353,54 @@ app.get('/api/user/:userId', async (req, res) => {
         completedLessons: safeJsonArray(row.completed_lessons, []),
         completedCaseStudies: safeJsonArray(row.completed_case_studies, []),
         completedDailyTasks: [],
+        solvedQueriesCount: Number(row.solved_queries_count || row.solved_queries) || 0,
+        createdAt: row.created_at || new Date().toISOString(),
+      },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 3.5.1. Direct progress endpoint (/api/progress/:userId)
+app.get('/api/progress/:userId', async (req, res) => {
+  try {
+    const pRes = await pool.query(
+      `SELECT u.*, p.level, p.xp, p.gems, p.streak, p.last_daily_date, p.unlocked_chapters, p.completed_lessons, p.completed_case_studies, p.solved_queries_count
+       FROM users u
+       LEFT JOIN user_progress p ON u.id = p.user_id
+       WHERE u.id = $1
+          OR LOWER(u.username) = LOWER($1)
+          OR LOWER(COALESCE(u.gamer_tag, '')) = LOWER($1)
+          OR (u.email != '' AND LOWER(u.email) = LOWER($1))`,
+      [req.params.userId]
+    );
+
+    if (pRes.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found in PostgreSQL database' });
+    }
+
+    const row = pRes.rows[0];
+    res.json({
+      success: true,
+      user: {
+        id: row.id,
+        userId: row.id,
+        username: row.username,
+        gamerTag: row.gamer_tag || row.username,
+        email: row.email,
+        role: row.role,
+        level: Number(row.level) || 1,
+        xp: Number(row.xp) || 0,
+        gems: Number(row.gems ?? 0),
+        mana: 100,
+        maxMana: 100,
+        hp: 100,
+        maxHp: 100,
+        streak: Number(row.streak) || 1,
+        unlockedChapters: safeJsonArray(row.unlocked_chapters, [1]),
+        completedLessons: safeJsonArray(row.completed_lessons, []),
+        completedCaseStudies: safeJsonArray(row.completed_case_studies, []),
         solvedQueriesCount: Number(row.solved_queries_count || row.solved_queries) || 0,
         createdAt: row.created_at || new Date().toISOString(),
       },
@@ -675,7 +729,13 @@ function validateLessonQuery(lessonId, rows) {
 // Record lesson completion and sequential unlock in PostgreSQL
 async function recordUserLessonPassed(userId, lessonId, chapterId) {
   try {
-    const cur = await pool.query('SELECT * FROM user_progress WHERE user_id = $1', [userId]);
+    const userLookup = await pool.query(
+      `SELECT id FROM users WHERE id = $1 OR LOWER(username) = LOWER($1) OR LOWER(COALESCE(gamer_tag, '')) = LOWER($1) LIMIT 1`,
+      [userId]
+    );
+    const resolvedUserId = userLookup.rows.length > 0 ? userLookup.rows[0].id : userId;
+
+    const cur = await pool.query('SELECT * FROM user_progress WHERE user_id = $1', [resolvedUserId]);
     if (cur.rows.length === 0) return null;
 
     const row = cur.rows[0];
@@ -721,7 +781,7 @@ async function recordUserLessonPassed(userId, lessonId, chapterId) {
            completed_case_studies = $5, unlocked_chapters = $6,
            solved_queries_count = solved_queries_count + 1, updated_at = CURRENT_TIMESTAMP
        WHERE user_id = $7`,
-      [newXp, newGems, newLevel, JSON.stringify(completedLessons), JSON.stringify(completedCaseStudies), JSON.stringify(unlockedChapters), userId]
+      [newXp, newGems, newLevel, JSON.stringify(completedLessons), JSON.stringify(completedCaseStudies), JSON.stringify(unlockedChapters), resolvedUserId]
     );
 
     return {

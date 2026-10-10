@@ -250,20 +250,34 @@ export class ApiService {
    */
   static async getUserProfile(userId: string): Promise<PlayerProfile | null> {
     try {
-      const res = await fetch(`${API_BASE}/user/${userId}`);
+      const res = await fetch(`${API_BASE}/user/${encodeURIComponent(userId)}`);
       if (res.ok) {
         const json = await parseSafeJson(res);
         if (json && json.user) {
           StorageService.saveActiveProfile(json.user);
+          StorageService.setActiveUserId(json.user.id || json.user.userId);
           return json.user;
         }
       }
     } catch {}
 
+    // Fallback: If userId was a local ID, try looking up by local gamerTag or username in database
     const local = StorageService.getActiveProfile();
-    if (local && (local.id === userId || local.userId === userId)) {
-      return local;
+    const altIdentifier = local?.gamerTag || local?.username;
+    if (altIdentifier && altIdentifier !== userId) {
+      try {
+        const res = await fetch(`${API_BASE}/user/${encodeURIComponent(altIdentifier)}`);
+        if (res.ok) {
+          const json = await parseSafeJson(res);
+          if (json && json.user) {
+            StorageService.saveActiveProfile(json.user);
+            StorageService.setActiveUserId(json.user.id || json.user.userId);
+            return json.user;
+          }
+        }
+      } catch {}
     }
+
     return local;
   }
 

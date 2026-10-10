@@ -14,6 +14,7 @@ interface HomePageProps {
   onChangeView: (view: AppView) => void;
   onOpenProfile: () => void;
   onStartQuest: (chapterId: number, exerciseId?: string) => void;
+  onProfileUpdated?: (updated: PlayerProfile) => void;
 }
 
 export const HomePage: React.FC<HomePageProps> = ({
@@ -21,6 +22,7 @@ export const HomePage: React.FC<HomePageProps> = ({
   onChangeView,
   onOpenProfile,
   onStartQuest,
+  onProfileUpdated,
 }) => {
   // Real Leaderboard from PostgreSQL Database
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
@@ -29,6 +31,28 @@ export const HomePage: React.FC<HomePageProps> = ({
   // Toast notification state
   const [toastMessage, setToastMessage] = useState<string>('');
   const [isToastOpen, setIsToastOpen] = useState<boolean>(false);
+
+  // Auto-sync real authoritative user progress directly from PostgreSQL
+  useEffect(() => {
+    let isMounted = true;
+    const lookupId = profile.id || profile.userId || profile.gamerTag || profile.username;
+    if (lookupId) {
+      ApiService.getUserProfile(lookupId).then(fresh => {
+        if (!isMounted || !fresh) return;
+        const freshCompleted = fresh.completedLessons || [];
+        const currentCompleted = profile.completedLessons || [];
+        if (
+          fresh.xp !== profile.xp ||
+          fresh.level !== profile.level ||
+          freshCompleted.length !== currentCompleted.length ||
+          fresh.gems !== profile.gems
+        ) {
+          onProfileUpdated?.(fresh);
+        }
+      }).catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [profile.id, profile.gamerTag]);
 
   useEffect(() => {
     let isMounted = true;
