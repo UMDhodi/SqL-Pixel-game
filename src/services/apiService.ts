@@ -2,7 +2,7 @@ import { PlayerProfile } from '../types/game';
 import { StorageService } from './storageService';
 import { sqlEngine } from '../engine/sqlEngine';
 
-const API_BASE = (import.meta.env.VITE_API_BASE_URL as string) || '/api';
+const API_BASE = ((import.meta as any).env?.VITE_API_BASE_URL as string) || '/api';
 
 export interface ExecuteQueryResponse {
   success: boolean;

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { PlayerProfile, CareerRole } from '../types/game';
+import { PlayerProfile } from '../types/game';
 import { ApiService } from '../services/apiService';
-import { X, Key, Check, LogOut, Zap, Flame, Gem, Swords, Shield } from 'lucide-react';
+import { StorageService } from '../services/storageService';
+import { X, Key, Check, LogOut, Zap, Flame, Gem, Swords, Shield, Pencil, Lock, Loader2 } from 'lucide-react';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -22,9 +23,9 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   if (!isOpen) return null;
 
   const [tag, setTag] = useState(profile.gamerTag);
-  const [role, setRole] = useState<CareerRole>(profile.role);
-  const [pin, setPin] = useState(profile.pin);
+  const [isEditingTag, setIsEditingTag] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Level & EXP stats calculation
@@ -33,26 +34,41 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   const xpNeeded = currentLvl * 350;
   const xpPercent = Math.min(100, Math.round((currentXp / xpNeeded) * 100));
 
-  const handleSaveProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveGamerTag = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const cleanTag = tag.trim();
+    if (!cleanTag) {
+      setErrorMsg('Gamer tag cannot be blank.');
+      return;
+    }
+    if (cleanTag === profile.gamerTag) {
+      setIsEditingTag(false);
+      return;
+    }
+
     setIsSaving(true);
-    const updated = {
-      ...profile,
-      gamerTag: tag.trim() || 'Data Knight',
-      role,
-      pin: pin.trim() || '0000',
-    };
+    setErrorMsg('');
     try {
-      await ApiService.updateUserProfile(profile.id || profile.userId, {
-        gamerTag: updated.gamerTag,
-        role: updated.role,
-        pin: updated.pin,
+      const success = await ApiService.updateUserProfile(profile.id || profile.userId, {
+        gamerTag: cleanTag,
+        role: profile.role,
       });
-      onProfileUpdated(updated);
-      setSaveSuccessMsg('Profile saved to database!');
-      setTimeout(() => setSaveSuccessMsg(''), 2500);
+
+      if (success) {
+        const updated: PlayerProfile = {
+          ...profile,
+          gamerTag: cleanTag,
+        };
+        onProfileUpdated(updated);
+        StorageService.saveActiveProfile(updated);
+        setIsEditingTag(false);
+        setSaveSuccessMsg('Gamer Tag saved to database!');
+        setTimeout(() => setSaveSuccessMsg(''), 3000);
+      } else {
+        setErrorMsg('Failed to update Gamer Tag in database.');
+      }
     } catch {
-      setSaveSuccessMsg('Failed to update profile.');
+      setErrorMsg('Network error updating Gamer Tag.');
     } finally {
       setIsSaving(false);
     }
@@ -77,7 +93,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-parchment-rune hover:text-glyph-crimson p-1 transition-colors"
+            className="text-parchment-rune hover:text-glyph-crimson p-1 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -89,6 +105,13 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <div className="p-2.5 bg-glyph-emerald/20 border border-glyph-emerald text-glyph-emerald font-display text-xs flex items-center gap-2">
               <Check className="w-4 h-4" />
               <span>{saveSuccessMsg}</span>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="p-2.5 bg-glyph-crimson/20 border border-glyph-crimson text-glyph-crimson font-display text-xs flex items-center gap-2">
+              <X className="w-4 h-4" />
+              <span>{errorMsg}</span>
             </div>
           )}
 
@@ -168,66 +191,107 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             </div>
           </div>
 
-          {/* 2. Form: Profile Edit */}
-          <form onSubmit={handleSaveProfile} className="space-y-3 bg-dungeon-abyss border border-dungeon-border p-3.5">
+          {/* 2. ADVENTURER IDENTITY SETTINGS */}
+          <div className="space-y-3.5 bg-dungeon-abyss border border-dungeon-border p-3.5">
             <div className="font-display font-bold text-xs text-mana-core uppercase flex items-center gap-1.5">
               <Key className="w-3.5 h-3.5" />
-              <span>Adventurer Identity Settings</span>
+              <span>ADVENTURER IDENTITY SETTINGS</span>
             </div>
 
+            {/* GAMER TAG / CHARACTER NAME WITH EDIT FUNCTION */}
             <div>
-              <label className="block text-[11px] text-parchment-rune mb-1 font-display">
-                GAMER TAG / CHARACTER NAME:
+              <label className="block text-[11px] text-parchment-rune mb-1.5 font-display flex items-center justify-between">
+                <span>GAMER TAG / CHARACTER NAME:</span>
+                {isEditingTag && (
+                  <span className="text-[10px] text-quest-gold font-bold">EDITING</span>
+                )}
               </label>
-              <input
-                type="text"
-                value={tag}
-                onChange={(e) => setTag(e.target.value)}
-                className="w-full bg-dungeon-chamber border border-dungeon-highlight focus:border-mana-core text-parchment-white p-2 text-xs focus:outline-none"
-                required
-              />
+
+              {!isEditingTag ? (
+                /* Read-only view with Edit Button */
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-dungeon-chamber border border-dungeon-highlight p-2.5 text-xs text-parchment-white font-display font-bold flex items-center justify-between">
+                    <span>{profile.gamerTag}</span>
+                    <span className="text-[10px] text-mana-core font-code font-normal">SAVED</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTag(profile.gamerTag);
+                      setIsEditingTag(true);
+                      setErrorMsg('');
+                    }}
+                    className="bg-mana-core/20 hover:bg-mana-core hover:text-dungeon-abyss text-mana-core border border-mana-core px-3 py-2 text-xs font-display font-bold pixel-btn transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Pencil className="w-3.5 h-3.5" />
+                    <span>EDIT</span>
+                  </button>
+                </div>
+              ) : (
+                /* Editable mode with Save & Cancel Buttons */
+                <form onSubmit={handleSaveGamerTag} className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tag}
+                      onChange={(e) => setTag(e.target.value)}
+                      placeholder="Enter new gamer tag..."
+                      className="flex-1 bg-dungeon-chamber border-2 border-mana-core text-parchment-white p-2 text-xs focus:outline-none focus:ring-1 focus:ring-mana-glow font-display font-bold"
+                      autoFocus
+                      required
+                    />
+                    <button
+                      type="submit"
+                      disabled={isSaving || !tag.trim()}
+                      className="bg-mana-core hover:bg-mana-glow text-dungeon-abyss font-display font-bold text-xs px-3.5 py-2 pixel-btn transition-colors flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shadow-pixel"
+                    >
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          <span>SAVING...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>SAVE</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isSaving}
+                      onClick={() => {
+                        setTag(profile.gamerTag);
+                        setIsEditingTag(false);
+                        setErrorMsg('');
+                      }}
+                      className="bg-dungeon-abyss border border-dungeon-border text-parchment-rune hover:text-parchment-white px-2.5 py-2 text-xs font-display pixel-btn transition-colors cursor-pointer"
+                    >
+                      CANCEL
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] text-parchment-rune mb-1 font-display">
-                  CAREER CLASS:
-                </label>
-                <select
-                  value={role}
-                  onChange={(e) => setRole(e.target.value as CareerRole)}
-                  className="w-full bg-dungeon-chamber border border-dungeon-highlight focus:border-mana-core text-parchment-white p-2 text-xs focus:outline-none"
-                >
-                  <option value="Data Analyst">Data Analyst</option>
-                  <option value="Data Scientist">Data Scientist</option>
-                  <option value="Analytics Engineer">Analytics Engineer</option>
-                  <option value="Backend Developer">Backend Developer</option>
-                  <option value="Full Stack Developer">Full Stack Developer</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] text-parchment-rune mb-1 font-display">
-                  VAULT PIN (LOCAL KEY):
-                </label>
-                <input
-                  type="text"
-                  maxLength={6}
-                  value={pin}
-                  onChange={(e) => setPin(e.target.value)}
-                  className="w-full bg-dungeon-chamber border border-dungeon-highlight focus:border-mana-core text-parchment-white p-2 text-xs focus:outline-none"
-                />
+            {/* CAREER CLASS (LOCKED / READ-ONLY) */}
+            <div>
+              <label className="block text-[11px] text-parchment-rune mb-1.5 font-display flex items-center justify-between">
+                <span>CAREER CLASS:</span>
+                <span className="text-[10px] text-neutral-500 font-display flex items-center gap-1">
+                  <Lock className="w-3 h-3 text-neutral-500" />
+                  CANNOT BE EDITED
+                </span>
+              </label>
+              <div className="w-full bg-dungeon-chamber/60 border border-dungeon-highlight/60 text-parchment-white p-2.5 text-xs flex items-center justify-between cursor-not-allowed select-none">
+                <span className="font-display font-bold text-quest-gold">{profile.role}</span>
+                <span className="text-[10px] bg-dungeon-abyss border border-neutral-800 text-neutral-400 font-display px-2 py-0.5 flex items-center gap-1">
+                  <Lock className="w-2.5 h-2.5 text-neutral-500" />
+                  CLASS LOCKED
+                </span>
               </div>
             </div>
-
-            <button
-              type="submit"
-              disabled={isSaving}
-              className="w-full bg-mana-core text-dungeon-abyss font-display font-bold text-xs py-2 pixel-btn hover:bg-mana-glow transition-colors mt-2"
-            >
-              {isSaving ? 'SAVING...' : 'SAVE PROFILE'}
-            </button>
-          </form>
+          </div>
 
           {/* 3. LOGOUT BUTTON SECTION */}
           <div className="pt-2 border-t border-dungeon-border flex items-center justify-between">
@@ -237,7 +301,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
             <button
               type="button"
               onClick={handleConfirmLogout}
-              className="bg-glyph-crimson/20 border border-glyph-crimson text-glyph-crimson hover:bg-glyph-crimson hover:text-white px-3 py-1.5 font-display font-bold text-xs pixel-btn flex items-center gap-1.5 transition-colors"
+              className="bg-glyph-crimson/20 border border-glyph-crimson text-glyph-crimson hover:bg-glyph-crimson hover:text-white px-3 py-1.5 font-display font-bold text-xs pixel-btn flex items-center gap-1.5 transition-colors cursor-pointer"
             >
               <LogOut className="w-3.5 h-3.5" />
               <span>LOGOUT</span>
